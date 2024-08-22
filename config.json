@@ -1,0 +1,41 @@
+{
+  "voting": {
+    "maxVotes": 1000,
+    "votesPerHour": 50
+  },
+  "selectors": {
+    "consentButton": "button.fc-button.fc-cta-consent.fc-primary-button",
+    "cookieButton": "button#CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll",
+    "mainVoteButtonId": "54041",
+    "alternativeVoteButtonIds": [
+      "53878",
+      "53986",
+      "53865",
+      "53980",
+      "53661",
+      "53711",
+      "53999",
+      "53772",
+      "53760",
+      "53931",
+      "53936",
+      "53965",
+      "53914",
+      "53946",
+      "54009",
+      "54003",
+      "54049",
+      "53990"
+    ],
+    "top20List": "ul.top20",
+    "voteConfirmation": "div.balsbox"
+  },
+  "urls": {
+    "targetPage": "https://relaxfm.lt/relax-fm-top-15/"
+  },
+  "proxy": {
+    "username": "customer-domkisonas_IehkK-cc-lt",
+    "password": "Cr0ss5F1ng3rsP4lmKn0t+",
+    "endpoint": "pr.oxylabs.io:7777"
+  }
+}
