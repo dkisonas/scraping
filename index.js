@@ -3,13 +3,22 @@ import proxyChain from 'proxy-chain';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import dotenv from 'dotenv';
+
+// Load environment variables from .env file
+dotenv.config();
 
 // Get __dirname equivalent
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Load configuration
-const CONFIG = JSON.parse(fs.readFileSync('config.json', 'utf8'));
+let voteLog = {
+    votes: [],
+    statistics: {}
+};
+
+// Load configuration from config.json
+const CONFIG = JSON.parse(fs.readFileSync(path.join(__dirname, 'config.json'), 'utf8'));
 
 // Sleep function with randomization
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -17,15 +26,15 @@ const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 // Random interval function to simulate human behavior
 const randomInterval = (min, max) => Math.floor(Math.random() * (max - min + 1) + min);
 
-// Function to create a proxy URL with authentication
-const createProxyUrl = (config) => {
-    const { username, password, endpoint } = config;
-    return `http://${username}:${password}@${endpoint}`;
+// Function to create a proxy URL with authentication from environment variables
+const createProxyUrl = () => {
+    const { PROXY_USERNAME, PROXY_PASSWORD, PROXY_ENDPOINT } = process.env;
+    return `http://${PROXY_USERNAME}:${PROXY_PASSWORD}@${PROXY_ENDPOINT}`;
 };
 
 // Function to initialize Puppeteer browser with a new IP
-const initializeBrowserWithNewIP = async (proxyConfig) => {
-    const oldProxyUrl = createProxyUrl(proxyConfig);
+const initializeBrowserWithNewIP = async () => {
+    const oldProxyUrl = createProxyUrl();
     const newProxyUrl = await proxyChain.anonymizeProxy(oldProxyUrl);
 
     const browser = await puppeteer.launch({
@@ -79,56 +88,52 @@ const handleConsents = async (page, selectors) => {
 };
 
 // Function to vote with possible alternative candidates and log votes
-const voteMultipleTimes = async (page, selectors, times, minDelay, maxDelay, voteLog) => {
-    try {
-        for (let i = 0; i < times; i++) {
-            // Randomly decide whether to vote for the main candidate or an alternative
-            const voteForMain = Math.random() > 0.2; // 70% chance to vote for the main candidate
-            const buttonId = voteForMain ? selectors.mainVoteButtonId :
-                selectors.alternativeVoteButtonIds[Math.floor(Math.random() * selectors.alternativeVoteButtonIds.length)];
+const voteMultipleTimes = async (page, selectors, times, minDelay, maxDelay) => {
+    const mainVotePercentage = CONFIG.voting.mainVotePercentage / 100;
 
-            const buttonSelector = `button[data-id="${buttonId}"]`;
+    for (let i = 0; i < times; i++) {
+        const voteForMain = Math.random() < mainVotePercentage;
+        const buttonId = voteForMain ? selectors.mainVoteButtonId :
+            selectors.alternativeVoteButtonIds[Math.floor(Math.random() * selectors.alternativeVoteButtonIds.length)];
 
-            await page.waitForSelector(buttonSelector, { timeout: 20000 });
-            const button = await page.$(buttonSelector);
-            if (button) {
-                await button.evaluate(b => b.scrollIntoView());
-                await sleep(1000);
-                await button.click();
-                console.log(`Button clicked with data-id: ${buttonId}. Vote ${i + 1} of this session.`);
+        const buttonSelector = `button[data-id="${buttonId}"]`;
 
-                // Wait for the vote confirmation element
-                await sleep(1500);
+        await page.waitForSelector(buttonSelector, { timeout: 20000 });
+        const button = await page.$(buttonSelector);
+        if (button) {
+            await button.evaluate(b => b.scrollIntoView());
+            await sleep(1000);
+            await button.click();
+            console.log(`Button clicked with data-id: ${buttonId}. Vote ${i + 1} of this session.`);
 
-                // Check if the element has display: block style
-                const confirmationVisible = await page.$eval(selectors.voteConfirmation, element => {
-                    const displayStyle = window.getComputedStyle(element).display;
-                    return displayStyle === 'block';
-                });
+            // Wait for the vote confirmation element
+            await sleep(1500);
 
-                if (confirmationVisible) {
-                    console.log('Vote counted successfully. Confirmation visible.');
-                    // Log the vote only if the confirmation is visible
-                    voteLog.votes.push({ buttonId, timestamp: new Date().toISOString() });
-                } else {
-                    console.log('Confirmation not visible or vote not counted.');
-                }
+            // Check if the element has display: block style
+            const confirmationVisible = await page.$eval(selectors.voteConfirmation, element => {
+                const displayStyle = window.getComputedStyle(element).display;
+                return displayStyle === 'block';
+            });
 
-                await sleep(randomInterval(minDelay, maxDelay)); // Simulate human behavior
+            if (confirmationVisible) {
+                console.log('Vote counted successfully. Confirmation visible.');
+                // Log the vote only if the confirmation is visible
+                voteLog.votes.push({ buttonId, timestamp: new Date().toISOString() });
             } else {
-                console.log(`Vote button not found for data-id: ${buttonId}.`);
+                console.log('Confirmation not visible or vote not counted.');
             }
+
+            await sleep(randomInterval(minDelay, maxDelay)); // Simulate human behavior
+        } else {
+            console.log(`Vote button not found for data-id: ${buttonId}.`);
         }
-        return true;
-    } catch (error) {
-        console.error('Error during voting:', error.message);
-        throw error;
     }
+    return true;
 };
 
 // Function to save vote logs and statistics to a file
-const saveVoteLog = (voteLog) => {
-    const logFilePath = path.join(__dirname, `vote_log${new Date().toISOString()}.json`);
+const saveVoteLog = () => {
+    const logFilePath = path.join(__dirname, 'logs', `vote_log_${new Date().toISOString()}.json`);
 
     // Generate statistics
     const totalVotes = voteLog.votes.length;
@@ -146,17 +151,43 @@ const saveVoteLog = (voteLog) => {
     console.log(`Vote log and statistics saved to ${logFilePath}`);
 };
 
+// Setup graceful shutdown
+const saveAndExit = () => {
+    console.log('Gracefully shutting down...');
+    saveVoteLog();
+    process.exit(0);
+};
+
+process.on('SIGTERM', saveAndExit);
+process.on('SIGINT', saveAndExit);
+
+// Function to check if current time is within the allowed voting window
+const isWithinVoteWindow = () => {
+    const now = new Date();
+    const currentHour = now.getUTCHours(); // Using UTC for consistency on VPS
+    return currentHour >= CONFIG.schedule.voteWindow.start && currentHour < CONFIG.schedule.voteWindow.end;
+};
+
+// Convert voting period from days to milliseconds
+const totalVotingPeriodMs = CONFIG.voting.totalVotingPeriodDays * 24 * 60 * 60 * 1000;
+
+// Calculate the delay between each vote batch
+const delayBetweenBatches = totalVotingPeriodMs / CONFIG.voting.maxVotes;
+
+// Voting loop
 (async () => {
     let totalVotes = 0;
-    const delayBetweenSessions = 3600000 / CONFIG.voting.votesPerHour; // Time in ms between sessions
-    const voteLog = {
-        votes: [],
-        statistics: {}
-    };
 
     while (totalVotes < CONFIG.voting.maxVotes) {
+        if (!isWithinVoteWindow()) {
+            const delay = randomInterval(60000, 120000); // Sleep for 1-2 minutes if outside vote window
+            console.log('Outside voting window, waiting...');
+            await sleep(delay);
+            continue;
+        }
+
         console.log('Starting a new browser session with a new IP...');
-        const { browser, page } = await initializeBrowserWithNewIP(CONFIG.proxy);
+        const { browser, page } = await initializeBrowserWithNewIP();
 
         const navigationSuccessful = await navigateWithRetry(page, CONFIG.urls.targetPage, 3, 60000);
         if (!navigationSuccessful) {
@@ -171,15 +202,14 @@ const saveVoteLog = (voteLog) => {
             console.log('Waiting for the top 20 list to load...');
             await page.waitForSelector(CONFIG.selectors.top20List, { timeout: 60000 });
 
-            const votesInThisBatch = randomInterval(1, 5);
-            console.log('Will vote ' + votesInThisBatch + ' times in this batch.');
+            const votesInThisBatch = 5;
+            console.log('Will vote ' + votesInThisBatch + ' time in this batch.');
             const votingSuccessful = await voteMultipleTimes(
                 page,
                 CONFIG.selectors,
                 votesInThisBatch,
                 3000,
-                7000,
-                voteLog
+                7000
             );
 
             if (votingSuccessful) {
@@ -194,15 +224,15 @@ const saveVoteLog = (voteLog) => {
         await browser.close();
         console.log('Browser closed.');
 
-        // Delay between sessions to meet the votesPerHour limit
+        // Delay between batches
         if (totalVotes < CONFIG.voting.maxVotes) {
-            console.log(`Waiting ${delayBetweenSessions / 1000} seconds before the next session...`);
-            await sleep(delayBetweenSessions);
+            console.log(`Waiting ${delayBetweenBatches / 1000} seconds before the next session...`);
+            await sleep(delayBetweenBatches);
         }
     }
 
     console.log(`Voting completed. Total votes: ${totalVotes}`);
 
     // Save vote log and statistics
-    saveVoteLog(voteLog);
+    saveVoteLog();
 })();

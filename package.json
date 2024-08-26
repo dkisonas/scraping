@@ -1,6 +1,7 @@
 {
   "type": "module",
   "dependencies": {
+    "dotenv": "^16.4.5",
     "proxy-chain": "^2.5.3",
     "puppeteer": "^23.1.1",
     "typescript": "^5.5.4"

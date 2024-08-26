@@ -1,7 +1,14 @@
 {
   "voting": {
-    "maxVotes": 1000,
-    "votesPerHour": 50
+    "maxVotes": 1500,
+    "mainVotePercentage": 90,
+    "totalVotingPeriodDays": 5
+  },
+  "schedule": {
+    "voteWindow": {
+      "start": 6,
+      "end": 20
+    }
   },
   "selectors": {
     "consentButton": "button.fc-button.fc-cta-consent.fc-primary-button",
@@ -32,10 +39,5 @@
   },
   "urls": {
     "targetPage": "https://relaxfm.lt/relax-fm-top-15/"
-  },
-  "proxy": {
-    "username": "customer-domkisonas_IehkK-cc-lt",
-    "password": "Cr0ss5F1ng3rsP4lmKn0t+",
-    "endpoint": "pr.oxylabs.io:7777"
   }
 }

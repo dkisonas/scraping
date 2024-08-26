@@ -1,0 +1,9 @@
+services:
+  voter:
+    build: .
+    container_name: voter-container
+    volumes:
+      - ./logs:/app/logs
+    env_file:
+      - .env  # Load proxy environment variables from .env file
+    restart: unless-stopped
